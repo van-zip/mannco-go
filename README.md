@@ -14,15 +14,15 @@ A Go API client for [Mannco.store](https://mannco.store) — a Team Fortress 2, 
 | **Authentication** | API key → JWT exchange |
 | **Items & Pricing** | Sales graphs, listings, buy orders, pricing (single & bulk up to 100 items) |
 | **User Buy Orders** | View your active buy orders (specific item or all) |
-| **Market Orders** | Create, update, remove, and bulk buy orders |
+| **Buy Orders** | Create, update, remove, and bulk buy orders |
 | **User & History** | Balance, transaction / sales / purchase / cashout / balance history, user info, notifications, sales stats/charts, sessions |
 | **Inventory** | Items on sale, in inventory, set price, withdraw |
 | **Cart & Checkout** | Get, add, bulk add, remove, update cart |
 | **Payment** | Create payment sessions (balance & items) |
-| **Trading** | Active trades, all trades, resend trade |
+| **Trading** | *Not yet implemented* |
 | **Listing / Deposit** | *Not yet implemented* |
 
-> **Status**: This library covers the endpoints relevant to my own project. Many listing, trading, and user session endpoints are not yet implemented. PRs welcome!
+> **Status**: This library covers the endpoints relevant to my own project. Many listing and trading endpoints are not yet implemented. PRs welcome!
 
 ---
 
