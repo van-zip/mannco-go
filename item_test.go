@@ -289,3 +289,137 @@ func TestItemSalesGraphDefaultPeriod(t *testing.T) {
 	})
 }
 
+func TestItemDetails(t *testing.T) {
+	runAPITest(t, testCase[ItemDetailsPayload]{
+		name:         "ItemDetails_success",
+		mockStatus:   200,
+		mockResponse: `{"err":false,"success":true,"message":"","content":{"informations":{"id":101869,"name":"Item","quality":"Normal","type":"Rifle","rarity":"Covert","deal":71708,"color":"ffd700","game":730,"weapon":"M4A1-S","exterior":"Field-Tested","url":"slug"}}}`,
+		expectedPath:   "/item/details/101869",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) (ItemDetailsPayload, error) {
+			return client.ItemDetails(ctx, "101869")
+		},
+		assertResponse: func(t *testing.T, res ItemDetailsPayload) {
+			if res.Informations.ID != 101869 {
+				t.Errorf("expected ID 101869, got %d", res.Informations.ID)
+			}
+		},
+	})
+
+	runAPITest(t, testCase[ItemDetailsPayload]{
+		name:           "ItemDetails_not_found",
+		mockStatus:     404,
+		mockResponse:   `{"err":true,"success":false,"message":"Not found","content":null}`,
+		expectedPath:   "/item/details/99999",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) (ItemDetailsPayload, error) {
+			return client.ItemDetails(ctx, "99999")
+		},
+		assertError: func(t *testing.T, err error) {
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+		},
+	})
+}
+
+func TestItemListingCount(t *testing.T) {
+	runAPITest(t, testCase[ListingCountPayload]{
+		name:           "ItemListingCount_success",
+		mockStatus:     200,
+		mockResponse:   `{"err":false,"success":true,"message":"","content":{"count":13291}}`,
+		expectedPath:   "/item/listing/count/101869",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) (ListingCountPayload, error) {
+			return client.ItemListingCount(ctx, "101869", "")
+		},
+		assertResponse: func(t *testing.T, res ListingCountPayload) {
+			if res.Count != 13291 {
+				t.Errorf("expected count 13291, got %d", res.Count)
+			}
+		},
+	})
+
+	runAPITest(t, testCase[ListingCountPayload]{
+		name:           "ItemListingCount_with_user_id",
+		mockStatus:     200,
+		mockResponse:   `{"err":false,"success":true,"message":"","content":{"count":5}}`,
+		expectedPath:   "/item/listing/count/101869/user123",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) (ListingCountPayload, error) {
+			return client.ItemListingCount(ctx, "101869", "user123")
+		},
+		assertResponse: func(t *testing.T, res ListingCountPayload) {
+			if res.Count != 5 {
+				t.Errorf("expected count 5, got %d", res.Count)
+			}
+		},
+	})
+}
+
+func TestItemPricesByGame(t *testing.T) {
+	runAPITest(t, testCase[[]GameItemPrice]{
+		name:           "ItemPricesByGame_success",
+		mockStatus:     200,
+		mockResponse:   `{"err":false,"success":true,"message":"","content":[{"name":"Item","craftable":1,"effect":"","url":"440-item","assetcount":809,"price":1}]}`,
+		expectedPath:   "/item/prices",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) ([]GameItemPrice, error) {
+			return client.ItemPricesByGame(ctx, 440, false)
+		},
+		assertResponse: func(t *testing.T, res []GameItemPrice) {
+			if len(res) != 1 {
+				t.Fatalf("expected 1 item, got %d", len(res))
+			}
+		},
+	})
+
+	runAPITest(t, testCase[[]GameItemPrice]{
+		name:           "ItemPricesByGame_with_outofstock",
+		mockStatus:     200,
+		mockResponse:   `{"err":false,"success":true,"message":"","content":[]}`,
+		expectedPath:   "/item/prices",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) ([]GameItemPrice, error) {
+			return client.ItemPricesByGame(ctx, 440, true)
+		},
+		assertResponse: func(_ *testing.T, _ []GameItemPrice) {},
+	})
+}
+
+func TestItemDetailsFromBackpackTF2(t *testing.T) {
+	runAPITest(t, testCase[BackpackItemPayload]{
+		name:           "ItemDetailsFromBackpackTF2_success",
+		mockStatus:     200,
+		mockResponse:   `{"err":false,"success":true,"message":"","content":{"informations":{"id":1,"assetId":"987","item_id":5678,"state":1,"name":"Team Captain","quality":"Unusual","game":440}}}`,
+		expectedPath:   "/item/details/fromid/987",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) (BackpackItemPayload, error) {
+			return client.ItemDetailsFromBackpackTF2(ctx, "987")
+		},
+		assertResponse: func(t *testing.T, res BackpackItemPayload) {
+			if res.Informations.Name != "Team Captain" {
+				t.Errorf("expected 'Team Captain', got %q", res.Informations.Name)
+			}
+		},
+	})
+}
+
+func TestItemDetailsFromBackpackCS2(t *testing.T) {
+	runAPITest(t, testCase[CSBackpackItemPayload]{
+		name:           "ItemDetailsFromBackpackCS2_success",
+		mockStatus:     200,
+		mockResponse:   `{"err":false,"success":true,"message":"","content":{"informations":{"id":1,"assetId":"987","item_id":5678,"wear":0.15,"game":730}}}`,
+		expectedPath:   "/item/cs/details/fromid/987",
+		expectedMethod: "GET",
+		runTest: func(ctx context.Context, client *Client) (CSBackpackItemPayload, error) {
+			return client.ItemDetailsFromBackpackCS2(ctx, "987")
+		},
+		assertResponse: func(t *testing.T, res CSBackpackItemPayload) {
+			if res.Informations.Wear != 0.15 {
+				t.Errorf("expected wear 0.15, got %f", res.Informations.Wear)
+			}
+		},
+	})
+}
+
