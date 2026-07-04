@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // CartItem represents a cart row grouping one or more asset IDs of the same item at the same price.
@@ -20,6 +21,14 @@ type CartItem struct {
 // CartPayload wraps the cart array response
 type CartPayload struct {
 	Cart []CartItem `json:"cart"`
+}
+
+// AssetIDs returns the individual Steam asset IDs split from the comma-separated field.
+func (c CartItem) AssetIDs() []string {
+	if c.AssetID == "" {
+		return nil
+	}
+	return strings.Split(c.AssetID, ",")
 }
 
 // AddToCartRequest for POST /cart/add
@@ -108,7 +117,5 @@ func (c *Client) RemoveFromCart(ctx context.Context, cartID int) (CartPayload, e
 
 // UpdateCart runs integrity checks and optionally fixes the cart
 func (c *Client) UpdateCart(ctx context.Context) (CartUpdateResponse, error) {
-	// Empty body as per spec
-	jsonData := []byte("{}")
-	return executeRequest[CartUpdateResponse](ctx, c, "POST", "cart/update", jsonData, nil)
+	return executeRequest[CartUpdateResponse](ctx, c, "POST", "cart/update", []byte("{}"), nil)
 }
