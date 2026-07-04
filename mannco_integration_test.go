@@ -4,7 +4,6 @@ package mannco_test
 
 import (
 	"context"
-	"github.com/joho/godotenv"
 	"github.com/van-zip/mannco-go"
 	"os"
 	"testing"
