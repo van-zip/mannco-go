@@ -3,6 +3,7 @@ package mannco
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,27 +12,32 @@ import (
 )
 
 type testCase[ResponsePayload any] struct {
-	name           string
-	mockStatus     int
-	mockResponse   string
-	expectedPath   string
-	expectedMethod string
-	runTest        func(ctx context.Context, client *Client) (ResponsePayload, error)
-	assertResponse func(t *testing.T, res ResponsePayload)
-	assertError    func(t *testing.T, err error)
+	name              string
+	mockStatus        int
+	mockResponse      string
+	expectedPath      string
+	expectedMethod    string
+	runTest           func(ctx context.Context, client *Client) (ResponsePayload, error)
+	assertRequestBody func(*testing.T, []byte)
+	assertResponse    func(t *testing.T, res ResponsePayload)
+	assertError       func(t *testing.T, err error)
 }
 
 func runAPITest[T any](t *testing.T, tc testCase[T]) {
 	t.Run(tc.name, func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != tc.expectedMethod {
-				t.Errorf("expected %s request, got %s", tc.expectedMethod, r.Method)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Method != tc.expectedMethod {
+				t.Errorf("expected %s request, got %s", tc.expectedMethod, req.Method)
 			}
-			if r.URL.Path != tc.expectedPath {
-				t.Errorf("expected path %s, got %s", tc.expectedPath, r.URL.Path)
+			if req.URL.Path != tc.expectedPath {
+				t.Errorf("expected path %s, got %s", tc.expectedPath, req.URL.Path)
 			}
-			if r.Header.Get("Authorization") != "Bearer fake_token" {
-				t.Errorf("Expected Auth header 'Bearer fake_token', got '%s'", r.Header.Get("Authorization"))
+			if req.Header.Get("Authorization") != "Bearer fake_token" {
+				t.Errorf("Expected Auth header 'Bearer fake_token', got '%s'", req.Header.Get("Authorization"))
+			}
+			if tc.assertRequestBody != nil {
+				bodyBytes, _ := io.ReadAll(req.Body)
+				tc.assertRequestBody(t, bodyBytes)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(tc.mockStatus)
@@ -75,7 +81,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test non-200 status with API error message
 	t.Run("api_error_404", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"err":true,"success":false,"message":"Not found","content":null}`))
@@ -100,7 +106,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test 401 unauthorized
 	t.Run("unauthorized_401", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"err":true,"success":false,"message":"Unauthorized","content":null}`))
@@ -121,7 +127,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test 403 forbidden
 	t.Run("forbidden_403", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"err":true,"success":false,"message":"Forbidden","content":null}`))
@@ -142,7 +148,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test malformed JSON response
 	t.Run("malformed_json", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`not valid json`))
@@ -163,7 +169,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test API response with err=true
 	t.Run("api_response_err_true", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"err":true,"success":false,"message":"API error","content":null}`))
@@ -184,7 +190,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test API response with success=false
 	t.Run("api_response_success_false", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"err":false,"success":false,"message":"Operation failed","content":null}`))
@@ -205,7 +211,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test 500 internal server error
 	t.Run("server_error_500", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`{"err":true,"success":false,"message":"Internal server error","content":null}`))
@@ -245,7 +251,7 @@ func TestExecuteRequestErrorPaths(t *testing.T) {
 
 	// Test context cancellation
 	t.Run("context_cancelled", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			// Simulate slow response
 			time.Sleep(100 * time.Millisecond)
 			w.Header().Set("Content-Type", "application/json")
