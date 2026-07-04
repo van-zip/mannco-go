@@ -39,7 +39,7 @@ func TestGetCart(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-jwt", nil)
-	client.SetBaseURL(server.URL)
+	client.SetBaseURL(server.URL + "/")
 
 	ctx := context.Background()
 	cart, err := client.GetCart(ctx)
@@ -113,7 +113,7 @@ func TestAddToCart(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-jwt", nil)
-	client.SetBaseURL(server.URL)
+	client.SetBaseURL(server.URL + "/")
 
 	ctx := context.Background()
 	cart, err := client.AddToCart(ctx, "987654321")
@@ -178,7 +178,7 @@ func TestBulkAddToCart(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-jwt", nil)
-	client.SetBaseURL(server.URL)
+	client.SetBaseURL(server.URL + "/")
 
 	ctx := context.Background()
 	cart, err := client.BulkAddToCart(ctx, 5678, 5, "76561198000000000")
@@ -235,7 +235,7 @@ func TestRemoveFromCart(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-jwt", nil)
-	client.SetBaseURL(server.URL)
+	client.SetBaseURL(server.URL + "/")
 
 	ctx := context.Background()
 	cart, err := client.RemoveFromCart(ctx, 42)
@@ -302,7 +302,7 @@ func TestUpdateCart(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-jwt", nil)
-	client.SetBaseURL(server.URL)
+	client.SetBaseURL(server.URL + "/")
 
 	ctx := context.Background()
 	result, err := client.UpdateCart(ctx)
