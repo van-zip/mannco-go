@@ -11,7 +11,8 @@ A Go API client for [Mannco.store](https://mannco.store) — a Team Fortress 2, 
 
 | Category | Coverage |
 |----------|----------|
-| **Authentication** | API key → JWT exchange |
+| **Authentication** | API key → JWT exchange with auto-reauth on 401/403 |
+| **Rate Limiting** | Automatic retry with exponential backoff on 429 |
 | **Items & Pricing** | Sales graphs, listings, buy orders, pricing (single & bulk up to 100 items) |
 | **User Buy Orders** | View your active buy orders (specific item or all) |
 | **Buy Orders** | Create, update, remove, and bulk buy orders |
@@ -46,30 +47,42 @@ func main() {
 	defer cancel()
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	client := mannco.NewClient("", httpClient)
+	client := mannco.NewClient("your-mannco-store-api-key", httpClient)
 
-	apiKey := "your-mannco-store-api-key"
-	_, err := client.UserLogin(ctx, apiKey)
+	// Fetch your auth token (JWT)
+	fmt.Println("--- Fetching JWT ---")
+	err := client.UserLogin(ctx)
 	if err != nil {
-		log.Fatalf("login failed: %v", err)
+		log.Fatalf("Login failed: %v", err)
 	}
 
+	fmt.Println("--- Fetching User Balance ---")
 	balance, err := client.Balance(ctx)
 	if err != nil {
-		log.Fatalf("balance: %v", err)
+		log.Fatalf("Failed to retrieve balance: %v", err)
 	}
-	fmt.Printf("Balance: $%.2f\n", float64(balance)/100)
 
-	bulk, err := client.ItemPricingBulk(ctx, []int{371, 958, 803})
+	fmt.Printf("Current Account Balance: $%.2f\n\n", float64(balance)/100.0)
+
+	fmt.Println("--- Fetching Bulk Pricing Data ---")
+
+	// Max's severed head, Earbuds, Bill's hat ids
+	targetIDs := []int{371, 958, 803}
+	bulkData, err := client.ItemPricingBulk(ctx, targetIDs)
 	if err != nil {
-		log.Fatalf("bulk pricing: %v", err)
+		log.Printf("Warning: Failed bulk pricing call: %v", err)
+		return
 	}
 
-	for _, item := range bulk.Items {
-		fmt.Printf("Item %d | Lowest sale: $%.2f | Suggested: $%.2f\n",
+	fmt.Printf("Successfully analyzed %d items (%d from fresh live updates):\n",
+		bulkData.TotalItems,
+		bulkData.RefreshedItems,
+	)
+	for _, item := range bulkData.Items {
+		fmt.Printf(" - Item ID %d | Lowest Sale: $%.2f | Suggested Value: $%.2f\n",
 			item.ItemID,
-			float64(item.Pricing.LowestSalePrice)/100,
-			float64(item.Pricing.SuggestedPrice)/100,
+			float64(item.Pricing.LowestSalePrice)/100.0,
+			float64(item.Pricing.SuggestedPrice)/100.0,
 		)
 	}
 }
@@ -88,17 +101,25 @@ go run examples/example.go
 ### Client
 
 ```go
-client := mannco.NewClient(jwt string, httpClient *http.Client)
+client := mannco.NewClient(apiKey string, httpClient *http.Client)
 ```
 
 | Method | Description |
 |--------|-------------|
 | `SetJWT(token string)` | Update the bearer token |
 | `GetJWT() string` | Retrieve current token |
+| `SetAPIKey(key string)` | Update API key (used for re-auth on 429) |
+| `GetAPIKey() string` | Get current API key |
 | `SetBaseURL(url string)` | Override API base URL (useful for testing) |
 | `GetBaseURL() string` | Get current base URL |
 
 All methods accept `context.Context` as the first argument for cancellation/timeout control.
+
+### Retry Behavior
+
+The client automatically retries requests that return **HTTP 429 (Too Many Requests)** with exponential backoff (1s, 2s, 4s, max 30s) up to 3 attempts. It respects the `Retry-After` header when present.
+
+On **401/403**, the client automatically attempts to re-authenticate using the stored API key before retrying the original request once.
 
 ---
 
@@ -106,7 +127,7 @@ All methods accept `context.Context` as the first argument for cancellation/time
 
 | Endpoint | Method | Tag | Implemented | Function Signature |
 |----------|--------|-----|-------------|-------------------|
-| `/user/login` | POST | Auth | ✅ | `func (c *Client) UserLogin(ctx context.Context, apiKey string) (string, error)` |
+| `/user/login` | POST | Auth | ✅ | `func (c *Client) UserLogin(ctx context.Context) error` |
 | `/item/details/{item}` | GET | Items | ✅ | `func (c *Client) ItemDetails(ctx context.Context, itemID string) (ItemDetailsPayload, error)` |
 | `/item/salesGraph/{item}` | GET | Items | ✅ | `func (c *Client) ItemSalesGraph(ctx context.Context, itemID int, period Period) (PriceHistoryPayload, error)` |
 | `/item/listing/count/{item}` | GET | Items | ✅ | `func (c *Client) ItemListingCount(ctx context.Context, itemID string, userID string) (ListingCountPayload, error)` |
@@ -196,11 +217,14 @@ type CreatePaymentRequest struct {
 ## Testing
 
 ```bash
-# Unit tests (mock HTTP)
+# Unit tests (mock HTTP via httptest)
 go test -v ./...
 
-# Integration tests (require MANNCO_API_KEY in .env or env)
+# Integration tests (require MANNCO_API_KEY in .env or env var)
 MANNCO_API_KEY=your_key go test -v -tags=integration ./...
+
+# Lint
+golangci-lint run
 ```
 
 ---
