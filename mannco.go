@@ -10,12 +10,21 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 )
 
 // BaseURL is the default base URL for the mannco.store api
 const BaseURL = "https://api.mannco.store/"
+
+// Retry configuration constants
+const (
+	MaxRetries       = 3
+	BaseRetryDelay   = 1 * time.Second
+	MaxRetryDelay    = 30 * time.Second
+	DefaultRetryWait = 60 * time.Second
+)
 
 // APIResponse is the general shape of Mannco.store API responses
 type APIResponse[T any] struct {
@@ -83,7 +92,7 @@ func (c *Client) GetJWT() string {
 	return c.jwt
 }
 
-// SetAPIKey sets the API key for a client (used for re-authentication on 429)
+// SetAPIKey sets the API key for a client
 func (c *Client) SetAPIKey(key string) {
 	c.mu.Lock()
 	c.apiKey = key
@@ -138,17 +147,12 @@ func executeRequest[T any](ctx context.Context, c *Client, method, endpoint stri
 	if jwt := c.GetJWT(); jwt != "" {
 		req.Header.Set("Authorization", "Bearer "+jwt)
 	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return target, fmt.Errorf("%w: request execution failed: %w", ErrNetwork, err)
-	}
 
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// Execute with retry logic for 429 status
+	// these are closed already so we can safely ignore it
+	resp, bodyBytes, err := executeWithRetry(ctx, c, req) //nolint:bodyclose
 	if err != nil {
-		return target, fmt.Errorf("%w: failed reading raw response bytes: %w", ErrNetwork, &APIError{StatusCode: resp.StatusCode, Message: err.Error()})
+		return target, err
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
@@ -156,16 +160,9 @@ func executeRequest[T any](ctx context.Context, c *Client, method, endpoint stri
 			err := c.UserLogin(ctx)
 			if err == nil {
 				req.Header.Set("Authorization", "Bearer "+c.GetJWT())
-				resp, err = c.httpClient.Do(req)
+				resp, bodyBytes, err = executeWithRetry(ctx, c, req) //nolint:bodyclose
 				if err != nil {
-					return target, fmt.Errorf("%w: request execution failed after reauth: %w", ErrNetwork, err)
-				}
-				defer func() {
-					_ = resp.Body.Close()
-				}()
-				bodyBytes, err = io.ReadAll(resp.Body)
-				if err != nil {
-					return target, fmt.Errorf("%w: failed reading raw response bytes after reauth: %w", ErrNetwork, &APIError{StatusCode: resp.StatusCode, Message: err.Error()})
+					return target, err
 				}
 			}
 		}
@@ -192,4 +189,46 @@ func executeRequest[T any](ctx context.Context, c *Client, method, endpoint stri
 		return target, fmt.Errorf("%w: %w", ErrInternal, &APIError{StatusCode: resp.StatusCode, Message: apiResponse.Message})
 	}
 	return apiResponse.Content, nil
+}
+
+// executeWithRetry executes an HTTP request with retry logic for 429 (rate limited) responses
+func executeWithRetry(ctx context.Context, c *Client, req *http.Request) (*http.Response, []byte, error) {
+	var resp *http.Response
+	var bodyBytes []byte
+	var err error
+
+	for attempt := 0; attempt <= MaxRetries; attempt++ {
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: request execution failed: %w", ErrNetwork, err)
+		}
+
+		bodyBytes, err = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: failed reading raw response bytes: %w", ErrNetwork, &APIError{StatusCode: resp.StatusCode, Message: err.Error()})
+		}
+
+		// success
+		if resp.StatusCode != http.StatusTooManyRequests {
+			return resp, bodyBytes, nil
+		}
+
+		if attempt == MaxRetries {
+			return resp, bodyBytes, nil // Return the 429 response on final attempt
+		}
+
+		delay := time.Duration(attempt+1) * BaseRetryDelay
+		if delay > MaxRetryDelay {
+			delay = MaxRetryDelay
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	return resp, bodyBytes, nil
 }
