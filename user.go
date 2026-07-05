@@ -8,22 +8,25 @@ import (
 	"strconv"
 )
 
-// UserLogin uses the provided API key to login and return a JWT
-func (c *Client) UserLogin(ctx context.Context, apiKey string) (string, error) {
-	data := map[string]string{"apiKey": apiKey}
+// UserLogin uses the provided API key to login and get a new a JWT
+func (c *Client) UserLogin(ctx context.Context) error {
+	if c.apiKey == "" {
+		return fmt.Errorf("no api key provided to client")
+	}
+	data := map[string]string{"apiKey": c.apiKey}
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return "", fmt.Errorf("error encoding json for user login: %w", err)
+		return fmt.Errorf("error encoding json for user login: %w", err)
 	}
 
 	content, err := executeRequest[LoginPayload](ctx, c, "POST", "user/login", jsonData, nil)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	c.SetJWT(content.JWT)
 
-	return content.JWT, nil
+	return nil
 }
 
 // Balance returns the user balance in pennies

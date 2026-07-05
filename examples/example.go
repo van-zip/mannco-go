@@ -21,12 +21,12 @@ func main() {
 	}
 
 	// instantiate your  API client
-	client := mannco.NewClient("", customHTTPClient)
+	apiKey := "xxxxxxxxxxxxxxxxxxxxxxxxx"
+	client := mannco.NewClient(apiKey, customHTTPClient)
 
 	// fetch your auth token
 	fmt.Println("--- Fetching JWT ---")
-	apiKey := "xxxxxxxxxxxxxxxxxxxxxxxxx"
-	_, err := client.UserLogin(ctx, apiKey)
+	err := client.UserLogin(ctx)
 	if err != nil {
 		log.Fatalf("Login failed: %v", err)
 	}

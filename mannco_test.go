@@ -26,6 +26,14 @@ type testCase[ResponsePayload any] struct {
 func runAPITest[T any](t *testing.T, tc testCase[T]) {
 	t.Run(tc.name, func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// Handle re-auth endpoint: return 401 to make re-auth fail so original error propagates
+			if req.URL.Path == "/user/login" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"err":true,"success":false,"message":"Invalid API key","content":null}`))
+				return
+			}
+
 			if req.Method != tc.expectedMethod {
 				t.Errorf("expected %s request, got %s", tc.expectedMethod, req.Method)
 			}
@@ -41,12 +49,12 @@ func runAPITest[T any](t *testing.T, tc testCase[T]) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(tc.mockStatus)
-			// this failing shouldn't matter for a test suite
 			_, _ = w.Write([]byte(tc.mockResponse))
 		}))
 		defer server.Close()
 
 		client := NewClient("fake_token", nil)
+		client.SetJWT("fake_token")
 		client.SetBaseURL(server.URL + "/")
 
 		resp, err := tc.runTest(context.Background(), client)

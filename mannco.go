@@ -51,10 +51,11 @@ type Client struct {
 	mu         sync.RWMutex
 	baseURL    string
 	jwt        string
+	apiKey     string
 }
 
 // NewClient instantiates a new API client
-func NewClient(jwt string, httpClient *http.Client) *Client {
+func NewClient(apiKey string, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{
 			Timeout: 60 * time.Second,
@@ -62,7 +63,8 @@ func NewClient(jwt string, httpClient *http.Client) *Client {
 	}
 	return &Client{
 		baseURL:    BaseURL,
-		jwt:        jwt,
+		jwt:        "", // until login this isn't set
+		apiKey:     apiKey,
 		httpClient: httpClient,
 	}
 }
@@ -79,6 +81,20 @@ func (c *Client) GetJWT() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.jwt
+}
+
+// SetAPIKey sets the API key for a client (used for re-authentication on 429)
+func (c *Client) SetAPIKey(key string) {
+	c.mu.Lock()
+	c.apiKey = key
+	c.mu.Unlock()
+}
+
+// GetAPIKey gets the API key for a client
+func (c *Client) GetAPIKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.apiKey
 }
 
 // SetBaseURL sets the API client base url
@@ -133,6 +149,26 @@ func executeRequest[T any](ctx context.Context, c *Client, method, endpoint stri
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return target, fmt.Errorf("%w: failed reading raw response bytes: %w", ErrNetwork, &APIError{StatusCode: resp.StatusCode, Message: err.Error()})
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		if endpoint != "user/login" {
+			err := c.UserLogin(ctx)
+			if err == nil {
+				req.Header.Set("Authorization", "Bearer "+c.GetJWT())
+				resp, err = c.httpClient.Do(req)
+				if err != nil {
+					return target, fmt.Errorf("%w: request execution failed after reauth: %w", ErrNetwork, err)
+				}
+				defer func() {
+					_ = resp.Body.Close()
+				}()
+				bodyBytes, err = io.ReadAll(resp.Body)
+				if err != nil {
+					return target, fmt.Errorf("%w: failed reading raw response bytes after reauth: %w", ErrNetwork, &APIError{StatusCode: resp.StatusCode, Message: err.Error()})
+				}
+			}
+		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
